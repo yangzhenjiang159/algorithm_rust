@@ -1,4 +1,5 @@
-//! single linked list
+//! double linked list
+
 
 use std::fmt::{self, Display, Formatter};
 use std::ptr::NonNull;
@@ -6,13 +7,15 @@ use std::ptr::NonNull;
 #[derive(Debug)]
 struct Node<T> {
     val: T,
-    next: Option<NonNull<Node<T>>>
+    prev: Option<NonNull<Node<T>>>,
+    next: Option<NonNull<Node<T>>>,
 }
 
 impl<T> Node<T> {
-    fn new(t:T) -> Self {
+    pub fn new(t: T) -> Self {
         Node {
             val: t,
+            prev: None,
             next: None,
         }
     }
@@ -31,6 +34,31 @@ impl<T> Default for LinkedList<T> {
     }
 }
 
+
+impl<T> Display for LinkedList<T>
+where
+    T: Display,
+{
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match self.start {
+            Some(node) => write!(f, "{}", unsafe { node.as_ref() }),
+            None => Ok(()),
+        }
+    }
+}
+
+impl<T> Display for Node<T>
+where
+    T: Display,
+{
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match self.next {
+            Some(node) => write!(f, "{}, {}", self.val, unsafe { node.as_ref() }),
+            None => write!(f, "{}", self.val),
+        }
+    }
+}
+
 impl<T> LinkedList<T> {
     pub fn new() -> Self {
         Self {
@@ -42,7 +70,8 @@ impl<T> LinkedList<T> {
 
     pub fn add(&mut self, obj: T) {
         let mut node = Box::new(Node::new(obj));
-        let node_ptr = Some( unsafe { NonNull::new_unchecked(Box::into_raw(node)) });
+        node.prev = self.end;
+        let node_ptr = Some( unsafe { NonNull::new_unchecked(Box::into_raw(node)) } );
         match self.end {
             None => self.start = node_ptr,
             Some(end_ptr) => unsafe { (*end_ptr.as_ptr()).next = node_ptr },
@@ -55,91 +84,37 @@ impl<T> LinkedList<T> {
         self.get_ith_node(self.start, index)
     }
 
-    fn get_ith_node(&mut self, node: Option<NonNull<Node<T>>> , index: i32) -> Option<&T> {
+    fn get_ith_node(&mut self, node: Option<NonNull<Node<T>>>, index: i32) -> Option<&T>{
         match node {
             None => None,
             Some(node_ptr) => match index {
-                0 => Some(unsafe { &(*node_ptr.as_ptr()).val }),
-                _ => self.get_ith_node(unsafe { (*node_ptr.as_ptr()).next }, index - 1),
+                0 => Some( unsafe {  &(*node_ptr.as_ptr()).val  }),
+                _ => self.get_ith_node( unsafe { (*node_ptr.as_ptr()).next }, index - 1 ),
             }
         }
     }
 
-    pub fn merge(list_a: LinkedList<T>, list_b: LinkedList<T>) -> Self 
-    where 
-        T: PartialOrd + Clone,
-    {
-        let mut merge_list = LinkedList::new();
-        let mut current_a = list_a.start;
-        let mut current_b = list_b.start;
-
-        while current_a.is_some() && current_b.is_some() {
-            let node_a = unsafe { current_a.unwrap().as_ref() };
-            let node_b = unsafe { current_b.unwrap().as_ref() };
-            match node_a.val <= node_b.val {
-                true => { 
-                    merge_list.add(node_a.val.clone());
-                    current_a = node_a.next ;
-                },
-                false => {
-                    merge_list.add(node_b.val.clone());
-                    current_b = node_b.next ;
-                }
-            } 
+    pub fn reverse(&mut self) {
+        // 如果链表为空或只有一个元素，不需要反转
+        if self.length <= 1 {
+            return;
         }
-
-        while current_a.is_some() {
-            let node_a = unsafe { current_a.unwrap().as_ref() };
-            merge_list.add(node_a.val.clone());
-            current_a = node_a.next;
-        }
-
-        while current_b.is_some() {
-            let node_b = unsafe { current_b.unwrap().as_ref() };
-            merge_list.add(node_b.val.clone());
-            current_b = node_b.next;
-        }
-
-        merge_list
-    }
-}
-
-impl<T> Display for LinkedList<T> 
-where
-    T: Display
-{
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        match self.start {
-            Some(node) => write!(f, "{}", unsafe { node.as_ref() }),
-            None => Ok(()),
-        }
-    }
-}
-
-impl<T> Drop for LinkedList<T> {
-    fn drop(&mut self) {
+        // 遍历所有节点，交换每个节点的prev 和 next 指针
         let mut current = self.start;
         while let Some(node_ptr) = current {
-            // 获取下一个节点的指针（在释放当前节点前）
-            current = unsafe { (*node_ptr.as_ptr()).next };
-            // 将原始指针转换回Box，然后自动释放
             unsafe {
-                let drop_node = Box::from_raw(node_ptr.as_ptr());
-                println!("-----drop done------");
+                let node = node_ptr.as_ptr();
+                // 保存下一个节点（反转前的next）
+                let next_node = (*node).next;
+
+                // 交换当前节点 prev 和 next 指针
+                std::mem::swap(&mut (*node).prev, &mut (*node).next);
+
+                // 移动到下一个节点（现在存储在原来的next中）
+                current = next_node;
             }
         }
-    }
-}
-
-impl<T> Display for Node<T>
-where
-    T: Display
-{
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        match self.next {
-            Some(node) => write!(f, "{}, {}", self.val, unsafe { node.as_ref() }),
-            None => write!(f, "{}", self.val),
-        }
+        std::mem::swap(&mut self.start, &mut self.end);
     }
 }
 
@@ -168,45 +143,38 @@ mod tests {
     }
 
     #[test]
-    fn test_merge_linked_list_1() {
-        let mut list_a = LinkedList::<i32>::new();
-        let mut list_b = LinkedList::<i32>::new();
-        let vec_a = vec![1,3,5,7];
-        let vec_b = vec![2,4,6,8];
-        let target_vec = vec![1,2,3,4,5,6,7,8];
-
-        for i in 0..vec_a.len(){
-            list_a.add(vec_a[i]);
+    fn test_reverse_linked_list_1() {
+        let mut list = LinkedList::<i32>::new();
+        let original_vec = vec![2,3,5,11,9,7];
+        let reverse_vec = vec![7,9,11,5,3,2];
+        for i in 0..original_vec.len(){
+            list.add(original_vec[i]);
         }
-        for i in 0..vec_b.len(){
-            list_b.add(vec_b[i]);
-        }
-        println!("list a {} list b {}", list_a,list_b);
-        let mut list_c = LinkedList::<i32>::merge(list_a,list_b);
-        println!("merged List is {}", list_c);
-        for i in 0..target_vec.len(){
-            assert_eq!(target_vec[i],*list_c.get(i as i32).unwrap());
+        println!("Linked List is {}", list);
+        list.reverse();
+        println!("Reversed Linked List is {}", list);
+        for i in 0..original_vec.len(){
+            assert_eq!(reverse_vec[i],*list.get(i as i32).unwrap());
         }
     }
-    #[test]
-    fn test_merge_linked_list_2() {
-        let mut list_a = LinkedList::<i32>::new();
-        let mut list_b = LinkedList::<i32>::new();
-        let vec_a = vec![11,33,44,88,89,90,100];
-        let vec_b = vec![1,22,30,45];
-        let target_vec = vec![1,11,22,30,33,44,45,88,89,90,100];
 
-        for i in 0..vec_a.len(){
-            list_a.add(vec_a[i]);
+    #[test]
+    fn test_reverse_linked_list_2() {
+        let mut list = LinkedList::<i32>::new();
+        let original_vec = vec![34,56,78,25,90,10,19,34,21,45];
+        let reverse_vec = vec![45,21,34,19,10,90,25,78,56,34];
+        for i in 0..original_vec.len(){
+            list.add(original_vec[i]);
         }
-        for i in 0..vec_b.len(){
-            list_b.add(vec_b[i]);
-        }
-        println!("list a {} list b {}", list_a,list_b);
-        let mut list_c = LinkedList::<i32>::merge(list_a,list_b);
-        println!("merged List is {}", list_c);
-        for i in 0..target_vec.len(){
-            assert_eq!(target_vec[i],*list_c.get(i as i32).unwrap());
+        println!("Linked List is {}", list);
+        list.reverse();
+        println!("Reversed Linked List is {}", list);
+        for i in 0..original_vec.len(){
+            assert_eq!(reverse_vec[i],*list.get(i as i32).unwrap());
         }
     }
 }
+
+
+
+

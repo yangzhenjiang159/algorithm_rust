@@ -1,1 +1,2 @@
-pub mod linked_list;
+mod single_linked_list;
+mod linked_list;
